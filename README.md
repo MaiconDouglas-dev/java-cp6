@@ -2,6 +2,62 @@
 
 Projeto de exemplo para demonstrar o uso de IA generativa em Java com Spring Boot, Spring AI, LangChain4j e Ollama. A ideia é servir como material didático para comparar duas formas de conversar com um modelo local e também mostrar um exemplo simples de RAG usando um arquivo de texto.
 
+> Fork do projeto base [lgsreal/ai_example](https://github.com/lgsreal/ai_example), rodando com o modelo **Qwen 2.5 (3B)** no lugar do Llama.
+
+## Entrega: modelo escolhido e testes
+
+### Modelo escolhido
+
+Olhei a [biblioteca de modelos do Ollama](https://ollama.com/library) e descartei as famílias Gemma e Llama, como pede a atividade. Escolhi:
+
+| Uso | Modelo | Por quê |
+|---|---|---|
+| Chat (Spring AI, LangChain4j, RAG e chatbot) | `qwen2.5:3b` (Alibaba, 1.9 GB) | Bom em português, contexto de até 128K, suporte a tools, e roda bem num notebook com 16 GB de RAM. Não tem o modo "thinking" do Qwen3, então as respostas vêm sem blocos `<think>`. |
+| Embeddings do RAG | `nomic-embed-text` (274 MB) | Modelo feito só para embeddings, mais adequado para busca vetorial que usar o próprio modelo de chat. |
+
+```bash
+brew install ollama
+brew services start ollama
+ollama pull qwen2.5:3b
+ollama pull nomic-embed-text
+```
+
+### O que mudei no projeto
+
+- `application.properties`: `spring.ai.ollama.chat.model=qwen2.5:3b` e `spring.ai.ollama.embedding.model=nomic-embed-text`.
+- `Lang4jChatService`: o nome do modelo estava fixo (`llama3.2`) no código. Agora ele lê `spring.ai.ollama.chat.model` e `spring.ai.ollama.base-url`, então Spring AI e LangChain4j usam sempre o mesmo modelo. O `ChatModel` também passou a ser criado uma vez só, no construtor, em vez de a cada requisição.
+- `vectorstore.json`: recriado. O arquivo antigo tinha embeddings do llama3.2, com outra dimensão de vetor, que não servem para o `nomic-embed-text`. Basta apagar o arquivo para a aplicação gerar um novo a partir do `rfc7231.txt`.
+- `gradlew`: marcado como executável, para `./gradlew bootRun` funcionar no macOS/Linux.
+
+### Testes da API
+
+Todos os prints são de chamadas reais à aplicação rodando em `localhost:8080`, com o Ollama local.
+
+#### 1. Spring AI: `GET /springai/generate`
+
+![Teste do endpoint springai/generate](docs/prints/01-springai-generate.png)
+
+O Spring AI usa o `ChatClient` configurado pelo starter do Ollama e devolve `{"ollama": "..."}`. A resposta chegou em pouco mais de 1 segundo, em português e no tamanho pedido (duas frases). O conteúdo é genérico mas correto. Em outra execução, o modelo disse que o Spring AI era "da Alibaba Cloud", o que é falso: um modelo de 3B sem contexto alucina fácil com nomes de projetos. É justamente o problema que o RAG (teste 3) ataca.
+
+#### 2. LangChain4j: `GET /langchain4j/generate`
+
+![Teste do endpoint langchain4j/generate](docs/prints/02-langchain4j-generate.png)
+
+Mesma pergunta, agora pelo `OllamaChatModel` do LangChain4j, apontando para o mesmo `qwen2.5:3b`. O formato da resposta e o tempo são iguais ao do Spring AI, o que mostra que as duas bibliotecas são só camadas diferentes sobre a mesma API do Ollama. A descrição tem uma imprecisão: o LangChain4j não é uma abstração "para a API do LangChain", e sim uma biblioteca Java inspirada nele.
+
+#### 3. RAG: `GET /rag/generate`
+
+![Teste do endpoint rag/generate](docs/prints/03-rag-generate.png)
+
+Aqui a pergunta passa primeiro pelo `SimpleVectorStore`: o `nomic-embed-text` gera o embedding da pergunta, os trechos mais parecidos da RFC 7231 entram no prompt (`rag-prompt-template.st`) e só então o Qwen responde. A resposta (400) está correta e é direta, porque vem do documento e não da "memória" do modelo. A primeira chamada demora mais (cerca de 11 s), pois a aplicação gera o `vectorstore.json`. As seguintes levam cerca de 2 s.
+
+#### 4. Chatbot em `localhost:8080`
+
+![Chatbot em localhost:8080](docs/prints/04-chatbot.png)
+
+A página web usa `POST /springai/chat`, que guarda um histórico curto por `sessionId`. O cabeçalho mostra que o Ollama está conectado com o modelo `qwen2.5:3b`. No teste, me apresentei, pedi dicas e depois perguntei "Qual é o meu nome?". O bot respondeu "Seu nome é Maicon", o que confirma que a memória da conversa funciona. As dicas sobre o Qwen, por outro lado, misturam o modelo local com serviços da Alibaba Cloud, mais um exemplo das limitações de um modelo pequeno.
+
+
 ## Tecnologias usadas
 
 - Java 21
@@ -19,7 +75,8 @@ Projeto de exemplo para demonstrar o uso de IA generativa em Java com Spring Boo
 Instale o Ollama e baixe o modelo usado no projeto:
 
 ```bash
-ollama pull llama3.2:latest
+ollama pull qwen2.5:3b
+ollama pull nomic-embed-text
 ```
 
 Depois deixe o Ollama rodando:
@@ -31,7 +88,7 @@ ollama serve
 Em outro terminal, você também pode testar o modelo diretamente:
 
 ```bash
-ollama run llama3.2:latest
+ollama run qwen2.5:3b
 ```
 
 Por padrão, o Ollama fica disponível em:
