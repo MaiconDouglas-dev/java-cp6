@@ -60,7 +60,7 @@ A página web usa `POST /springai/chat`, que guarda um histórico curto por `ses
 
 ## Tecnologias usadas
 
-- Java 21
+- Java 25
 - Spring Boot 3.5.9
 - Gradle
 - Spring AI 1.1.4
